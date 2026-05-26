@@ -43,60 +43,137 @@ class DtrProcessor {
           
           final entry = entries[day]!;
           
-          // Simple logic for Form 48 Slots
-          // Slot 1: AM Arrival (Earliest before 12:00)
-          final amLogs = logs.where((l) => l.timestamp.hour < 12).toList();
-          if (amLogs.isNotEmpty) {
-            entry.amArrival = amLogs.first.timestamp;
-            if (amLogs.length > 1) {
-              entry.amDeparture = amLogs.last.timestamp;
-            }
-          }
-
-          // Slot 2: PM Arrival/Departure (Logs after 12:00)
-          final pmLogs = logs.where((l) => l.timestamp.hour >= 12).toList();
-          if (pmLogs.isNotEmpty) {
-            entry.pmArrival = pmLogs.first.timestamp;
-            if (pmLogs.length > 1) {
-              entry.pmDeparture = pmLogs.last.timestamp;
-            } else if (amLogs.length == 1) {
-              // If only one log in afternoon, and we have AM arrival, 
-              // maybe this is PM departure? 
-              // Often Form 48 users log 4 times.
-              entry.pmDeparture = pmLogs.first.timestamp;
-              entry.pmArrival = null;
-            }
-          }
-          
-          // Refined Slotting:
-          // In many systems: 
-          // Arrival AM: < 10:00
-          // Departure AM: 10:00 - 13:00
-          // Arrival PM: 13:00 - 15:00
-          // Departure PM: > 15:00
-          
-          // Let's try a more robust approach based on actual time windows
+          // Smart, adaptive chronological slotting
           entry.amArrival = null;
           entry.amDeparture = null;
           entry.pmArrival = null;
           entry.pmDeparture = null;
 
-          for (var log in logs) {
-            final time = log.timestamp.hour * 60 + log.timestamp.minute;
-            
-            if (time < 11 * 60) { // Before 11 AM
-              entry.amArrival ??= log.timestamp;
-            } else if (time >= 11 * 60 && time < 13 * 60) { // 11 AM - 1 PM
-              // Could be AM Departure or PM Arrival
-              if (entry.amDeparture == null) {
-                 entry.amDeparture = log.timestamp;
+          final times = logs.map((l) => l.timestamp).toList();
+          times.sort((a, b) => a.compareTo(b));
+
+          if (times.isNotEmpty) {
+            if (times.length == 1) {
+              final t = times[0];
+              if (t.hour < 12) {
+                entry.amArrival = t;
               } else {
-                 entry.pmArrival = log.timestamp;
+                if (t.hour >= 15) {
+                  entry.pmDeparture = t;
+                } else {
+                  entry.pmArrival = t;
+                }
               }
-            } else if (time >= 13 * 60 && time < 16 * 60) { // 1 PM - 4 PM
-              entry.pmArrival ??= log.timestamp;
-            } else if (time >= 16 * 60) { // After 4 PM
-              entry.pmDeparture = log.timestamp;
+            } else if (times.length == 2) {
+              final t1 = times[0];
+              final t2 = times[1];
+              
+              if (t1.hour < 12) {
+                entry.amArrival = t1;
+                if (t2.hour < 12 || (t2.hour == 12 && t2.minute <= 30)) {
+                  entry.amDeparture = t2;
+                } else {
+                  entry.pmDeparture = t2;
+                }
+              } else {
+                entry.pmArrival = t1;
+                entry.pmDeparture = t2;
+              }
+            } else if (times.length == 3) {
+              final t1 = times[0];
+              final t2 = times[1];
+              final t3 = times[2];
+
+              if (t1.hour < 12) {
+                entry.amArrival = t1;
+                if (t2.hour < 12 || (t2.hour == 12 && t2.minute <= 30)) {
+                  entry.amDeparture = t2;
+                  if (t3.hour >= 14) {
+                    entry.pmDeparture = t3;
+                  } else {
+                    entry.pmArrival = t3;
+                  }
+                } else {
+                  entry.pmArrival = t2;
+                  entry.pmDeparture = t3;
+                }
+              } else {
+                entry.pmArrival = t1;
+                entry.pmDeparture = t3;
+              }
+            } else {
+              // 4 or more punches: group them by closest target time
+              const amInTarget = 8 * 60;     // 8:00 AM
+              const amOutTarget = 12 * 60;   // 12:00 PM
+              const pmInTarget = 13 * 60;    // 1:00 PM
+              const pmOutTarget = 17 * 60;   // 5:00 PM
+
+              final List<DateTime> amInCandidates = [];
+              final List<DateTime> amOutCandidates = [];
+              final List<DateTime> pmInCandidates = [];
+              final List<DateTime> pmOutCandidates = [];
+
+              for (var t in times) {
+                final minutes = t.hour * 60 + t.minute;
+                
+                final diffAmIn = (minutes - amInTarget).abs();
+                final diffAmOut = (minutes - amOutTarget).abs();
+                final diffPmIn = (minutes - pmInTarget).abs();
+                final diffPmOut = (minutes - pmOutTarget).abs();
+
+                var minDiff = diffAmIn;
+                var slot = 'amIn';
+
+                if (diffAmOut < minDiff) {
+                  minDiff = diffAmOut;
+                  slot = 'amOut';
+                }
+                if (diffPmIn < minDiff) {
+                  minDiff = diffPmIn;
+                  slot = 'pmIn';
+                }
+                if (diffPmOut < minDiff) {
+                  minDiff = diffPmOut;
+                  slot = 'pmOut';
+                }
+
+                if (slot == 'amIn') {
+                  amInCandidates.add(t);
+                } else if (slot == 'amOut') {
+                  amOutCandidates.add(t);
+                } else if (slot == 'pmIn') {
+                  pmInCandidates.add(t);
+                } else if (slot == 'pmOut') {
+                  pmOutCandidates.add(t);
+                }
+              }
+
+              if (amInCandidates.isNotEmpty) {
+                amInCandidates.sort((a, b) => a.compareTo(b));
+                entry.amArrival = amInCandidates.first;
+              }
+              if (amOutCandidates.isNotEmpty) {
+                amOutCandidates.sort((a, b) => a.compareTo(b));
+                entry.amDeparture = amOutCandidates.last;
+              }
+              if (pmInCandidates.isNotEmpty) {
+                pmInCandidates.sort((a, b) => a.compareTo(b));
+                entry.pmArrival = pmInCandidates.first;
+              }
+              if (pmOutCandidates.isNotEmpty) {
+                pmOutCandidates.sort((a, b) => a.compareTo(b));
+                entry.pmDeparture = pmOutCandidates.last;
+              }
+
+              // Fallback: if we have exactly 4 punches but they got clustered into fewer slots,
+              // enforce sequential order to avoid blanks.
+              if (times.length == 4 && 
+                  (entry.amArrival == null || entry.amDeparture == null || entry.pmArrival == null || entry.pmDeparture == null)) {
+                entry.amArrival = times[0];
+                entry.amDeparture = times[1];
+                entry.pmArrival = times[2];
+                entry.pmDeparture = times[3];
+              }
             }
           }
         });
