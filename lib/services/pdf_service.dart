@@ -117,6 +117,16 @@ class PdfService {
     final effectivePmIn = parse(dtr.pmInTime, pmIn);
     final effectivePmOut = parse(dtr.pmOutTime, pmOut);
 
+    int totalMonthUndertime = 0;
+    for (int day = 1; day <= 31; day++) {
+      final entry = dtr.entries[day];
+      if (entry != null) {
+        totalMonthUndertime += _calculateUndertime(entry, effectiveAmIn, effectiveAmOut, effectivePmIn, effectivePmOut);
+      }
+    }
+    final totalHours = totalMonthUndertime ~/ 60;
+    final totalMins = totalMonthUndertime % 60;
+
     return pw.Container(
       padding: pw.EdgeInsets.symmetric(horizontal: 15, vertical: 20),
       child: pw.Column(
@@ -274,9 +284,38 @@ class PdfService {
                 children: [
                   pw.SizedBox(),
                   pw.SizedBox(),
-                  pw.Container(child: pw.Text('Total', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8)), padding: pw.EdgeInsets.all(1)),
-                  pw.Row(children: [pw.Expanded(child: pw.SizedBox()), pw.Expanded(child: pw.Container(decoration: pw.BoxDecoration(border: pw.Border(left: pw.BorderSide(width: 0.5)))))],),
-                ]
+                  pw.Container(
+                    child: pw.Text('Total', textAlign: pw.TextAlign.right, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8)),
+                    padding: pw.EdgeInsets.all(1),
+                  ),
+                  pw.Row(
+                    children: [
+                      pw.Expanded(
+                        child: pw.Container(
+                          child: pw.Text(
+                            totalHours > 0 ? '$totalHours' : '',
+                            textAlign: pw.TextAlign.center,
+                            style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
+                          ),
+                          padding: pw.EdgeInsets.all(0.5),
+                        ),
+                      ),
+                      pw.Expanded(
+                        child: pw.Container(
+                          child: pw.Text(
+                            totalMins > 0 ? '$totalMins' : '',
+                            textAlign: pw.TextAlign.center,
+                            style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
+                          ),
+                          padding: pw.EdgeInsets.all(0.5),
+                          decoration: pw.BoxDecoration(
+                            border: pw.Border(left: pw.BorderSide(width: 0.5)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               )
             ],
           ),
