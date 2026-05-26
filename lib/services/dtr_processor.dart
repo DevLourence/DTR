@@ -68,7 +68,6 @@ class DtrProcessor {
           if (times.isNotEmpty) {
             // Resolve set times for this user
             final existing = existingDtrs?[userId];
-            final amInTarget = _parseToMinutes(existing?.amInTime, 8 * 60);     // Default 8:00 AM
             final amOutTarget = _parseToMinutes(existing?.amOutTime, 12 * 60);   // Default 12:00 PM
             final pmInTarget = _parseToMinutes(existing?.pmInTime, 13 * 60);    // Default 1:00 PM
 
@@ -97,20 +96,8 @@ class DtrProcessor {
             if (amInCandidates.isNotEmpty) {
               amInCandidates.sort((a, b) => a.compareTo(b));
               final firstAmIn = amInCandidates.first;
-              final amInMinutes = firstAmIn.hour * 60 + firstAmIn.minute;
               
-              // AM In: Exactly the set time when arriving early or on-time
-              if (amInMinutes <= amInTarget) {
-                entry.amArrival = DateTime(
-                  firstAmIn.year,
-                  firstAmIn.month,
-                  firstAmIn.day,
-                  amInTarget ~/ 60,
-                  amInTarget % 60,
-                );
-              } else {
-                entry.amArrival = firstAmIn;
-              }
+              entry.amArrival = firstAmIn;
             }
             if (amOutCandidates.isNotEmpty) {
               amOutCandidates.sort((a, b) => a.compareTo(b));
