@@ -71,7 +71,6 @@ class DtrProcessor {
             final amInTarget = _parseToMinutes(existing?.amInTime, 8 * 60);     // Default 8:00 AM
             final amOutTarget = _parseToMinutes(existing?.amOutTime, 12 * 60);   // Default 12:00 PM
             final pmInTarget = _parseToMinutes(existing?.pmInTime, 13 * 60);    // Default 1:00 PM
-            final pmOutTarget = _parseToMinutes(existing?.pmOutTime, 17 * 60);   // Default 5:00 PM
 
             final List<DateTime> amInCandidates = [];
             final List<DateTime> amOutCandidates = [];
@@ -81,27 +80,37 @@ class DtrProcessor {
             for (var t in times) {
               final minutes = t.hour * 60 + t.minute;
               
-              // Distance to target times
-              final diffAmIn = (minutes - amInTarget).abs();
-              final diffAmOut = (minutes - amOutTarget).abs();
-              final diffPmIn = (minutes - pmInTarget).abs();
-              final diffPmOut = (minutes - pmOutTarget).abs();
-
-              // Only read within 25 minutes of the set/target times
-              if (diffAmIn <= 25) {
+              // Only in AM Out and PM In have 25 mins allotted range.
+              // PM Out is limitless (all afternoon/evening punches after PM In range).
+              // AM In is limitless morning punches before AM Out range.
+              if (minutes < amOutTarget - 25) {
                 amInCandidates.add(t);
-              } else if (diffAmOut <= 25) {
+              } else if ((minutes - amOutTarget).abs() <= 25) {
                 amOutCandidates.add(t);
-              } else if (diffPmIn <= 25) {
+              } else if ((minutes - pmInTarget).abs() <= 25) {
                 pmInCandidates.add(t);
-              } else if (diffPmOut <= 25) {
+              } else if (minutes > pmInTarget + 25) {
                 pmOutCandidates.add(t);
               }
             }
 
             if (amInCandidates.isNotEmpty) {
               amInCandidates.sort((a, b) => a.compareTo(b));
-              entry.amArrival = amInCandidates.first;
+              final firstAmIn = amInCandidates.first;
+              final amInMinutes = firstAmIn.hour * 60 + firstAmIn.minute;
+              
+              // AM In: Exactly the set time when arriving early or on-time
+              if (amInMinutes <= amInTarget) {
+                entry.amArrival = DateTime(
+                  firstAmIn.year,
+                  firstAmIn.month,
+                  firstAmIn.day,
+                  amInTarget ~/ 60,
+                  amInTarget % 60,
+                );
+              } else {
+                entry.amArrival = firstAmIn;
+              }
             }
             if (amOutCandidates.isNotEmpty) {
               amOutCandidates.sort((a, b) => a.compareTo(b));
