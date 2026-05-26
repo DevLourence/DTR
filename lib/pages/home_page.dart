@@ -114,7 +114,11 @@ class _HomePageState extends State<HomePage> {
         }
 
         // Process combined records — persons are grouped by userId inside DtrProcessor
-        final dtrs = DtrProcessor.processToMonthlyDtr(allRecords);
+        final existingDtrsMap = {for (var d in _monthlyDtrs) d.userId.trim(): d};
+        final dtrs = DtrProcessor.processToMonthlyDtr(
+          allRecords,
+          existingDtrs: existingDtrsMap,
+        );
 
         setState(() {
           final Map<String, MonthlyDtr> uniqueMap = {};

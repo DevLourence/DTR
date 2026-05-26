@@ -2,7 +2,20 @@ import '../models/biometric_record.dart';
 import '../models/dtr_entry.dart';
 
 class DtrProcessor {
-  static List<MonthlyDtr> processToMonthlyDtr(List<BiometricRecord> records) {
+  static int _parseToMinutes(String? s, int fallbackMinutes) {
+    if (s == null || !s.contains(':')) return fallbackMinutes;
+    final parts = s.split(':');
+    try {
+      return int.parse(parts[0]) * 60 + int.parse(parts[1]);
+    } catch (_) {
+      return fallbackMinutes;
+    }
+  }
+
+  static List<MonthlyDtr> processToMonthlyDtr(
+    List<BiometricRecord> records, {
+    Map<String, MonthlyDtr>? existingDtrs,
+  }) {
     // 1. Group by Person
     final personGroups = <String, List<BiometricRecord>>{};
     for (var r in records) {
@@ -43,7 +56,7 @@ class DtrProcessor {
           
           final entry = entries[day]!;
           
-          // Smart, adaptive chronological slotting
+          // Smart, adaptive chronological slotting with 25-minute constraint from set times
           entry.amArrival = null;
           entry.amDeparture = null;
           entry.pmArrival = null;
@@ -53,127 +66,54 @@ class DtrProcessor {
           times.sort((a, b) => a.compareTo(b));
 
           if (times.isNotEmpty) {
-            if (times.length == 1) {
-              final t = times[0];
-              if (t.hour < 12) {
-                entry.amArrival = t;
-              } else {
-                if (t.hour >= 15) {
-                  entry.pmDeparture = t;
-                } else {
-                  entry.pmArrival = t;
-                }
-              }
-            } else if (times.length == 2) {
-              final t1 = times[0];
-              final t2 = times[1];
+            // Resolve set times for this user
+            final existing = existingDtrs?[userId];
+            final amInTarget = _parseToMinutes(existing?.amInTime, 8 * 60);     // Default 8:00 AM
+            final amOutTarget = _parseToMinutes(existing?.amOutTime, 12 * 60);   // Default 12:00 PM
+            final pmInTarget = _parseToMinutes(existing?.pmInTime, 13 * 60);    // Default 1:00 PM
+            final pmOutTarget = _parseToMinutes(existing?.pmOutTime, 17 * 60);   // Default 5:00 PM
+
+            final List<DateTime> amInCandidates = [];
+            final List<DateTime> amOutCandidates = [];
+            final List<DateTime> pmInCandidates = [];
+            final List<DateTime> pmOutCandidates = [];
+
+            for (var t in times) {
+              final minutes = t.hour * 60 + t.minute;
               
-              if (t1.hour < 12) {
-                entry.amArrival = t1;
-                if (t2.hour < 12 || (t2.hour == 12 && t2.minute <= 30)) {
-                  entry.amDeparture = t2;
-                } else {
-                  entry.pmDeparture = t2;
-                }
-              } else {
-                entry.pmArrival = t1;
-                entry.pmDeparture = t2;
-              }
-            } else if (times.length == 3) {
-              final t1 = times[0];
-              final t2 = times[1];
-              final t3 = times[2];
+              // Distance to target times
+              final diffAmIn = (minutes - amInTarget).abs();
+              final diffAmOut = (minutes - amOutTarget).abs();
+              final diffPmIn = (minutes - pmInTarget).abs();
+              final diffPmOut = (minutes - pmOutTarget).abs();
 
-              if (t1.hour < 12) {
-                entry.amArrival = t1;
-                if (t2.hour < 12 || (t2.hour == 12 && t2.minute <= 30)) {
-                  entry.amDeparture = t2;
-                  if (t3.hour >= 14) {
-                    entry.pmDeparture = t3;
-                  } else {
-                    entry.pmArrival = t3;
-                  }
-                } else {
-                  entry.pmArrival = t2;
-                  entry.pmDeparture = t3;
-                }
-              } else {
-                entry.pmArrival = t1;
-                entry.pmDeparture = t3;
+              // Only read within 25 minutes of the set/target times
+              if (diffAmIn <= 25) {
+                amInCandidates.add(t);
+              } else if (diffAmOut <= 25) {
+                amOutCandidates.add(t);
+              } else if (diffPmIn <= 25) {
+                pmInCandidates.add(t);
+              } else if (diffPmOut <= 25) {
+                pmOutCandidates.add(t);
               }
-            } else {
-              // 4 or more punches: group them by closest target time
-              const amInTarget = 8 * 60;     // 8:00 AM
-              const amOutTarget = 12 * 60;   // 12:00 PM
-              const pmInTarget = 13 * 60;    // 1:00 PM
-              const pmOutTarget = 17 * 60;   // 5:00 PM
+            }
 
-              final List<DateTime> amInCandidates = [];
-              final List<DateTime> amOutCandidates = [];
-              final List<DateTime> pmInCandidates = [];
-              final List<DateTime> pmOutCandidates = [];
-
-              for (var t in times) {
-                final minutes = t.hour * 60 + t.minute;
-                
-                final diffAmIn = (minutes - amInTarget).abs();
-                final diffAmOut = (minutes - amOutTarget).abs();
-                final diffPmIn = (minutes - pmInTarget).abs();
-                final diffPmOut = (minutes - pmOutTarget).abs();
-
-                var minDiff = diffAmIn;
-                var slot = 'amIn';
-
-                if (diffAmOut < minDiff) {
-                  minDiff = diffAmOut;
-                  slot = 'amOut';
-                }
-                if (diffPmIn < minDiff) {
-                  minDiff = diffPmIn;
-                  slot = 'pmIn';
-                }
-                if (diffPmOut < minDiff) {
-                  minDiff = diffPmOut;
-                  slot = 'pmOut';
-                }
-
-                if (slot == 'amIn') {
-                  amInCandidates.add(t);
-                } else if (slot == 'amOut') {
-                  amOutCandidates.add(t);
-                } else if (slot == 'pmIn') {
-                  pmInCandidates.add(t);
-                } else if (slot == 'pmOut') {
-                  pmOutCandidates.add(t);
-                }
-              }
-
-              if (amInCandidates.isNotEmpty) {
-                amInCandidates.sort((a, b) => a.compareTo(b));
-                entry.amArrival = amInCandidates.first;
-              }
-              if (amOutCandidates.isNotEmpty) {
-                amOutCandidates.sort((a, b) => a.compareTo(b));
-                entry.amDeparture = amOutCandidates.last;
-              }
-              if (pmInCandidates.isNotEmpty) {
-                pmInCandidates.sort((a, b) => a.compareTo(b));
-                entry.pmArrival = pmInCandidates.first;
-              }
-              if (pmOutCandidates.isNotEmpty) {
-                pmOutCandidates.sort((a, b) => a.compareTo(b));
-                entry.pmDeparture = pmOutCandidates.last;
-              }
-
-              // Fallback: if we have exactly 4 punches but they got clustered into fewer slots,
-              // enforce sequential order to avoid blanks.
-              if (times.length == 4 && 
-                  (entry.amArrival == null || entry.amDeparture == null || entry.pmArrival == null || entry.pmDeparture == null)) {
-                entry.amArrival = times[0];
-                entry.amDeparture = times[1];
-                entry.pmArrival = times[2];
-                entry.pmDeparture = times[3];
-              }
+            if (amInCandidates.isNotEmpty) {
+              amInCandidates.sort((a, b) => a.compareTo(b));
+              entry.amArrival = amInCandidates.first;
+            }
+            if (amOutCandidates.isNotEmpty) {
+              amOutCandidates.sort((a, b) => a.compareTo(b));
+              entry.amDeparture = amOutCandidates.last;
+            }
+            if (pmInCandidates.isNotEmpty) {
+              pmInCandidates.sort((a, b) => a.compareTo(b));
+              entry.pmArrival = pmInCandidates.first;
+            }
+            if (pmOutCandidates.isNotEmpty) {
+              pmOutCandidates.sort((a, b) => a.compareTo(b));
+              entry.pmDeparture = pmOutCandidates.last;
             }
           }
         });
@@ -187,12 +127,18 @@ class DtrProcessor {
           }
         }
 
+        final existing = existingDtrs?[userId];
         results.add(MonthlyDtr(
           userId: userId,
           name: bestName,
           month: month,
           year: year,
           entries: entries,
+          supervisor: existing?.supervisor,
+          amInTime: existing?.amInTime,
+          amOutTime: existing?.amOutTime,
+          pmInTime: existing?.pmInTime,
+          pmOutTime: existing?.pmOutTime,
         ));
       });
     });
