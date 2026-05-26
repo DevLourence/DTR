@@ -41,10 +41,10 @@ class FileTextExtractor {
 
   static Future<String> _extractFromExcel(File file) async {
     final Uint8List bytes = await file.readAsBytes();
-    
-    // Check if it's SpreadsheetML (XML)
+
+    // Check if it's SpreadsheetML XML (some XLS exports are actually XML)
     try {
-      final header = String.fromCharCodes(bytes.take(100));
+      final header = String.fromCharCodes(bytes.take(200));
       if (header.contains('<?xml') || header.contains('<Workbook')) {
         return await file.readAsString();
       }
@@ -56,7 +56,24 @@ class FileTextExtractor {
     for (var table in excel.tables.keys) {
       final sheet = excel.tables[table]!;
       for (var row in sheet.rows) {
-        final rowData = row.map((cell) => cell?.value?.toString() ?? '').join('\t');
+        // Skip fully empty rows
+        final hasContent = row.any((cell) => cell?.value != null);
+        if (!hasContent) continue;
+
+        final rowData = row.map((cell) {
+          if (cell?.value == null) return '';
+          final val = cell!.value;
+          // Preserve DateTime cells as ISO 8601 so BiometricParser can parse them
+          if (val is DateTimeCellValue) {
+            final dt = DateTime(val.year, val.month, val.day,
+                val.hour, val.minute, val.second);
+            return dt.toIso8601String();
+          }
+          if (val is IntCellValue) return val.value.toString();
+          if (val is DoubleCellValue) return val.value.toString();
+          return val.toString();
+        }).join('\t');
+
         buffer.writeln(rowData);
       }
     }

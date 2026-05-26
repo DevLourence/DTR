@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:printing/printing.dart';
+import '../models/biometric_record.dart';
 import '../models/dtr_entry.dart';
 import '../services/biometric_parser.dart';
 import '../services/dtr_processor.dart';
@@ -12,6 +13,7 @@ import '../services/file_text_extractor.dart';
 import '../services/storage_service.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
+
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -89,36 +91,43 @@ class _HomePageState extends State<HomePage> {
   Future<void> _pickFile() async {
     final result = await FilePicker.pickFiles(
       type: FileType.any,
-      allowMultiple: false,
+      allowMultiple: true, // Allow picking multiple files at once
     );
 
-    if (result != null) {
+    if (result != null && result.files.isNotEmpty) {
       setState(() {
         _isLoading = true;
-        _fileName = result.files.single.name;
-        _selectedDtr = null; // Clear selection on new file
+        _fileName = result.files.length == 1
+            ? result.files.single.name
+            : '${result.files.length} files selected';
+        _selectedDtr = null;
       });
 
       try {
-        final file = File(result.files.single.path!);
-        final content = await FileTextExtractor.extractText(file);
+        // Collect all records across all selected files
+        final List<BiometricRecord> allRecords = [];
+        for (final picked in result.files) {
+          final file = File(picked.path!);
+          final content = await FileTextExtractor.extractText(file);
+          final records = BiometricParser.parseRawFile(content);
+          allRecords.addAll(records);
+        }
 
-        final records = BiometricParser.parseRawFile(content);
-        final dtrs = DtrProcessor.processToMonthlyDtr(records);
+        // Process combined records — persons are grouped by userId inside DtrProcessor
+        final dtrs = DtrProcessor.processToMonthlyDtr(allRecords);
 
         setState(() {
-          // Add new and deduplicate by name, month, and year
           final Map<String, MonthlyDtr> uniqueMap = {};
 
-          // First add existing to the map
+          // Keep existing records
           for (var d in _monthlyDtrs) {
-            final key = '${d.name.trim()}-${d.month}-${d.year}';
+            final key = '${d.userId.trim()}-${d.month}-${d.year}';
             uniqueMap[key] = d;
           }
 
-          // Then add/overwrite with new records from file
+          // Add/overwrite with newly parsed records
           for (var d in dtrs) {
-            final key = '${d.name.trim()}-${d.month}-${d.year}';
+            final key = '${d.userId.trim()}-${d.month}-${d.year}';
             uniqueMap[key] = d;
           }
 
@@ -1254,23 +1263,12 @@ class _HomePageState extends State<HomePage> {
     final supervisorController = TextEditingController(
       text: _inChargeController.text,
     );
-    int selectedMonth = newDtrs.isNotEmpty
-        ? newDtrs.first.month
-        : DateTime.now().month;
-    int selectedYear = newDtrs.isNotEmpty
-        ? newDtrs.first.year
-        : DateTime.now().year;
 
     TimeOfDay amIn = _amIn;
     TimeOfDay amOut = _amOut;
     TimeOfDay pmIn = _pmIn;
     TimeOfDay pmOut = _pmOut;
 
-    final currentYear = DateTime.now().year;
-    final years = {
-      selectedYear,
-      ...List.generate(7, (i) => currentYear - 3 + i),
-    }.toList()..sort();
 
     showDialog(
       context: context,
@@ -1404,78 +1402,10 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 25),
-
-                    Text(
-                      'REPORTING PERIOD',
-                      style: GoogleFonts.outfit(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.grey[600],
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<int>(
-                            initialValue: selectedMonth,
-                            decoration: InputDecoration(
-                              labelText: 'Month',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                              ),
-                            ),
-                            items: List.generate(
-                              12,
-                              (i) => DropdownMenuItem(
-                                value: i + 1,
-                                child: Text(
-                                  DateFormat(
-                                    'MMMM',
-                                  ).format(DateTime(2024, i + 1)),
-                                  style: const TextStyle(fontSize: 13),
-                                ),
-                              ),
-                            ),
-                            onChanged: (v) =>
-                                setDialogState(() => selectedMonth = v!),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: DropdownButtonFormField<int>(
-                            initialValue: selectedYear,
-                            decoration: InputDecoration(
-                              labelText: 'Year',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                              ),
-                            ),
-                            items: years
-                                .map(
-                                  (y) => DropdownMenuItem(
-                                    value: y,
-                                    child: Text(
-                                      y.toString(),
-                                      style: const TextStyle(fontSize: 13),
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (v) =>
-                                setDialogState(() => selectedYear = v!),
-                          ),
-                        ),
-                      ],
-                    ),
+                    const SizedBox(height: 10),
+                    // Note: Reporting period (month/year) is not overridden here.
+                    // Each person's period is already parsed from the file.
+                    // Use the individual "Edit Record" button to adjust per-person periods.
                   ],
                 ),
               ),
@@ -1497,11 +1427,13 @@ class _HomePageState extends State<HomePage> {
                             final index = _monthlyDtrs.indexOf(dtr);
                             if (index != -1) {
                               _monthlyDtrs[index] = dtr.copyWith(
-                                name: nameController.text.trim().isEmpty
-                                    ? dtr.name
-                                    : nameController.text.trim(),
-                                month: selectedMonth,
-                                year: selectedYear,
+                                // Only override name for single-record imports
+                                name: newDtrs.length == 1 &&
+                                        nameController.text.trim().isNotEmpty
+                                    ? nameController.text.trim()
+                                    : dtr.name,
+                                // Do NOT override month/year — each person's
+                                // month/year was already parsed correctly from the file
                                 supervisor: supervisorController.text.trim(),
                                 amInTime: _formatTimeOfDay(amIn),
                                 amOutTime: _formatTimeOfDay(amOut),
