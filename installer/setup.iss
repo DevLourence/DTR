@@ -40,7 +40,7 @@ PrivilegesRequired=lowest
 ; Minimum Windows version (Windows 10)
 MinVersion=10.0
 ; Architecture
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesInstallIn64BitMode=x64compatible
 ; Uninstall
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExeName}
@@ -50,7 +50,6 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon";    Description: "{cm:CreateDesktopIcon}";    GroupDescription: "{cm:AdditionalIcons}"
-Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 6.1
 
 [Files]
 ; Main executable
@@ -78,9 +77,6 @@ Name: "{group}\Uninstall {#AppName}";    Filename: "{uninstallexe}"
 
 ; Desktop shortcut (optional, based on task selection)
 Name: "{autodesktop}\{#AppName}";        Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
-
-; Quick Launch (Windows XP/Vista)
-Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: quicklaunchicon
 
 [Run]
 ; Launch the app after installation (optional)
