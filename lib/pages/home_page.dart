@@ -528,6 +528,42 @@ class _HomePageState extends State<HomePage> {
               ElevatedButton.icon(
                 onPressed: () async {
                   final bytes = await pdfBuild(PdfPageFormat.a4);
+                  final String? outputFile = await FilePicker.saveFile(
+                    dialogTitle: 'Export DTR PDF',
+                    fileName: 'DTR_${dtr.name}_${dtr.monthName}.pdf',
+                    type: FileType.custom,
+                    allowedExtensions: ['pdf'],
+                  );
+                  if (outputFile != null) {
+                    final file = File(outputFile);
+                    await file.writeAsBytes(bytes);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Successfully exported PDF to ${outputFile.split(Platform.pathSeparator).last}',
+                          ),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.download_rounded),
+                label: const Text('Export PDF'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal[700],
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final bytes = await pdfBuild(PdfPageFormat.a4);
                   await Printing.layoutPdf(onLayout: (format) => bytes);
                 },
                 icon: const Icon(Icons.print_outlined),
@@ -596,6 +632,42 @@ class _HomePageState extends State<HomePage> {
                   );
                 },
                 tooltip: 'Share All',
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final bytes = await pdfBuild(PdfPageFormat.a4);
+                  final String? outputFile = await FilePicker.saveFile(
+                    dialogTitle: 'Export Bulk DTR PDF',
+                    fileName: 'All_DTRs_Paper_Saver.pdf',
+                    type: FileType.custom,
+                    allowedExtensions: ['pdf'],
+                  );
+                  if (outputFile != null) {
+                    final file = File(outputFile);
+                    await file.writeAsBytes(bytes);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Successfully exported bulk PDF to ${outputFile.split(Platform.pathSeparator).last}',
+                          ),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.download_rounded),
+                label: const Text('Export PDF'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal[700],
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
               ),
               const SizedBox(width: 8),
               ElevatedButton.icon(
