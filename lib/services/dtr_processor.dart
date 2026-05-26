@@ -82,13 +82,13 @@ class DtrProcessor {
               // Only in AM Out and PM In have 25 mins allotted range.
               // PM Out is limitless (all afternoon/evening punches after PM In range).
               // AM In is limitless morning punches before AM Out range.
-              if (minutes < amOutTarget - 25) {
+              if (minutes <= amOutTarget - 25) {
                 amInCandidates.add(t);
-              } else if ((minutes - amOutTarget).abs() <= 25) {
+              } else if ((minutes - amOutTarget).abs() < 25) {
                 amOutCandidates.add(t);
-              } else if ((minutes - pmInTarget).abs() <= 25) {
+              } else if ((minutes - pmInTarget).abs() < 25) {
                 pmInCandidates.add(t);
-              } else if (minutes > pmInTarget + 25) {
+              } else if (minutes >= pmInTarget + 25) {
                 pmOutCandidates.add(t);
               }
             }
